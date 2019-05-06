@@ -11,9 +11,11 @@ namespace CaptchaV2
     {
         static void Main()
         {
-            Scanner scanner = new Scanner(Process.GetProcessById(260));
-            scanner.Test();
+            Scanner scanner = new Scanner(Process.GetProcessesByName("CCLauncher_Client")[0]);
+            scanner.Execute();
             Console.ReadLine();
+
+
         }
     }
 }
