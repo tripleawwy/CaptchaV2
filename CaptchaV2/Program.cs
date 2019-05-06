@@ -14,6 +14,7 @@ namespace CaptchaV2
             Scanner scanner = new Scanner(Process.GetProcessById(260));
             scanner.Test();
 
+            Console.WriteLine( );
         }
     }
 }
