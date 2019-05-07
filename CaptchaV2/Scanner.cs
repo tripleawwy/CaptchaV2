@@ -49,6 +49,7 @@ namespace CaptchaV2
             IndicatorValues = new byte[] { 0x08, 0x01 };
             CaptchaRead = new byte[] { 0x73, 0x72, 0x00, 0x30 };
             CaptchaWrite = new byte[] { 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
+            SendPoint = new Point(310, 375);
             Initialize();
         }
 
@@ -58,6 +59,9 @@ namespace CaptchaV2
         private List<RegionStructure>[] RegionLists { get; set; }
         private SystemInfo CurrentSystem { get; set; }
         private IntPtr TargetHandle { get; set; }
+        private IntPtr CaptchaWindowHandle { get; set; }
+        private Point SendPoint { get; set; }
+
 
         private byte[] IndicatorValues { get; set; }
         private byte[] CaptchaRead { get; set; }
@@ -79,11 +83,9 @@ namespace CaptchaV2
             SetCaptchaNumber();
             SetWriteValuePtr();
             SetWriteCounterPtr();
+            SetCaptchaWindowHandle();
             Console.WriteLine(WriteCounterPtr.ToString("X8") + " \n" + BitConverter.ToString(CaptchaNumbers,0));
             Clipboard.SetText(WriteCounterPtr.ToString("X8"));
-
-            IntPtr childHandle;
-            childHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "Anwesenheitskontrolle");
         }
 
 
@@ -97,12 +99,21 @@ namespace CaptchaV2
             {
                 Utilities.WriteCaptchaNumbers(TargetHandle, WriteCounterPtr, new byte[] { 0x04 });
             }
-            IntPtr test = new IntPtr(0x00250258);
-            Point spot = new Point(310, 375);
-            Utilities.LeftClick(test, spot);
+            Utilities.LeftClick(CaptchaWindowHandle, SendPoint);
 
         }
 
+        private void Initialize()
+        {
+
+            CurrentSystem = new SystemInfo();
+            TargetHandle = OpenProcess(QueryInformation | VirtualMemoryRead | VirtualMemoryWrite | VirtualMemoryOperation, false, CurrentProcess.Id);
+        }
+
+        private void SetCaptchaWindowHandle()
+        {
+            CaptchaWindowHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "Anwesenheitskontrolle");
+        }
 
         private void SetReadValuePtr()
         {
@@ -185,15 +196,7 @@ namespace CaptchaV2
         }
 
 
-        private void Initialize()
-        {
-            //int threadCount = Environment.ProcessorCount / 2;
-            int threadCount = 1;
 
-            RegionLists = new List<RegionStructure>[threadCount];
-            CurrentSystem = new SystemInfo();
-            TargetHandle = OpenProcess(QueryInformation | VirtualMemoryRead | VirtualMemoryWrite | VirtualMemoryOperation, false, CurrentProcess.Id);
-        }
 
         private void CreateEntryPoints()
         {
@@ -220,7 +223,7 @@ namespace CaptchaV2
                 }
 
                 //checks regions for necessary ProtectionStatus to ReadAndWrite and for the needed MemoryType 
-                if (memoryInfo.RegionSize == 0x2AB0000 // only for 1 region (prolly the correct region)
+                if (memoryInfo.RegionSize == 0x2AB0000 || ((int)memoryInfo.BaseAddress >= 0x06000000 && (int)memoryInfo.BaseAddress <= 0x0A000000) // only for 1 region (prolly the correct region)
                     && (memoryInfo.Protect == AllocationProtectEnum.PAGE_READWRITE
                     || memoryInfo.Protect == AllocationProtectEnum.PAGE_WRITECOMBINEPLUSREADWRITE
                     && (memoryInfo.Type == TypeEnum.MEM_IMAGE || memoryInfo.Type == TypeEnum.MEM_PRIVATE)
@@ -232,23 +235,42 @@ namespace CaptchaV2
                 }
                 helpMinimumAddress = (uint)memoryInfo.BaseAddress + memoryInfo.RegionSize;
             }
-            SplitList(originalRegionList, RegionLists);
+            SplitList(originalRegionList);
 
         }
 
         //splits a list into as many lists as the count of processors of the system
-        private void SplitList(List<RegionStructure> sourceList, List<RegionStructure>[] destinationList)
+        private void SplitList(List<RegionStructure> sourceList)
         {
-            int threadCount = destinationList.Length;
+            int threadCount;
 
+            if (sourceList.Count() >= Environment.ProcessorCount)
+            {
+                threadCount = Environment.ProcessorCount / 2;
+            }
+            else if (sourceList.Count() >= Environment.ProcessorCount/2)
+            {
+                threadCount = Environment.ProcessorCount / 2;
+            }
+            else if (sourceList.Count() > 1)
+            {
+                threadCount = 2;
+            }
+            else
+            {
+                threadCount = 1;
+            }
+
+
+            RegionLists = new List<RegionStructure>[threadCount];
             for (int i = 0; i < RegionLists.Count(); i++)
             {
-                destinationList[i] = new List<RegionStructure>();
+                RegionLists[i] = new List<RegionStructure>();
             }
 
             for (int i = 0; i < sourceList.Count(); i++)
             {
-                destinationList[i % threadCount].Add(sourceList.ElementAt(i));
+                RegionLists[i % threadCount].Add(sourceList.ElementAt(i));
             }
         }
 
@@ -268,14 +290,11 @@ namespace CaptchaV2
                 {
 
                     int bufferSize = buffer.Length - (length - 1);
-
                     for (int i = 0; i < bufferSize; i++)
                     {
                         found = true;
                         for (int j = 0; j < length; j++)
                         {
-
-                            //show off
                             found = buffer[i + j] == arrayToLookFor[j];
 
                             if (!found && j != 0)
@@ -288,7 +307,6 @@ namespace CaptchaV2
                                 i += j;
                                 break;
                             }
-
                         }
                         if (found)
                         {
@@ -314,19 +332,15 @@ namespace CaptchaV2
         private void SearchForValuesInMultipleThreads(byte[] arrayToLookFor)
         {
             List<Task> threadList = new List<Task>();
-
-
             foreach (List<RegionStructure> list in RegionLists)
             {
                 Task arsch = Task.Run(() => ByteArrayDigger(list, arrayToLookFor));
                 threadList.Add(arsch);
             }
-
             foreach (Task thread in threadList)
             {
                 thread.Wait();
             }
-
         }
 
 
