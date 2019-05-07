@@ -630,6 +630,9 @@ namespace DLLImports
         [DllImport("USER32.DLL")]
         public static extern bool EnumWindows(EnumWindowsProc enumFunc, int lParam);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
+
         //[DllImport("USER32.DLL")]
         //public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
@@ -662,6 +665,10 @@ namespace DLLImports
 
         [DllImport("user32.dll")]
         public static extern IntPtr SetCapture(IntPtr hWnd);
+
+
+
+
 
     }
 

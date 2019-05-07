@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Drawing;
+using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
@@ -6,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using static DLLImports.Kernel32DLL;
+using static DLLImports.User32DLL;
 using static DLLImports.Kernel32DLL.ProcessAccessFlags;
 
 namespace CaptchaV2
@@ -43,12 +46,10 @@ namespace CaptchaV2
         {
             CurrentProcess = process;
             CaptchaNumbers = new byte[4];
-            Initialize();
+            IndicatorValues = new byte[] { 0x08, 0x01 };
             CaptchaRead = new byte[] { 0x73, 0x72, 0x00, 0x30 };
-            CaptchaWrite = new byte[] { 0x08, 0x01, 0x00, 0x00, 0x00, 0x30, 0x01, 0xC0, 0x0C, 0x10, /*0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00*/ };
-
-            // 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 00 00
-            //05 00 00 00 D0 BB 85 0D 00 00 00 00 10 B4 90 09
+            CaptchaWrite = new byte[] { 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
+            Initialize();
         }
 
 
@@ -58,10 +59,9 @@ namespace CaptchaV2
         private SystemInfo CurrentSystem { get; set; }
         private IntPtr TargetHandle { get; set; }
 
-
+        private byte[] IndicatorValues { get; set; }
         private byte[] CaptchaRead { get; set; }
         private byte[] CaptchaWrite { get; set; }
-
 
         public byte[] CaptchaNumbers { get; private set; }
         public IntPtr ReadValuePtr { get; private set; }
@@ -72,12 +72,35 @@ namespace CaptchaV2
 
 
 
-        public void Execute()
+        public void ExecuteScan()
         {
+            CreateEntryPoints();
             SetReadValuePtr();
+            SetCaptchaNumber();
             SetWriteValuePtr();
             SetWriteCounterPtr();
-            SetCaptchaNumber();
+            Console.WriteLine(WriteCounterPtr.ToString("X8") + " \n" + BitConverter.ToString(CaptchaNumbers,0));
+            Clipboard.SetText(WriteCounterPtr.ToString("X8"));
+
+            IntPtr childHandle;
+            childHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "Anwesenheitskontrolle");
+        }
+
+
+        public void ExecuteHack()
+        {
+            if (WriteValuePtr != IntPtr.Zero)
+            {
+                Utilities.WriteCaptchaNumbers(TargetHandle, WriteValuePtr, Utilities.ConvertToUTF16(CaptchaNumbers));
+            }
+            if (WriteCounterPtr != IntPtr.Zero)
+            {
+                Utilities.WriteCaptchaNumbers(TargetHandle, WriteCounterPtr, new byte[] { 0x04 });
+            }
+            IntPtr test = new IntPtr(0x00250258);
+            Point spot = new Point(310, 375);
+            Utilities.LeftClick(test, spot);
+
         }
 
 
@@ -117,21 +140,28 @@ namespace CaptchaV2
 
         private void SetWriteValuePtr()
         {
-            int offset = 0x0D;
+            int offset = 0x04;
+            int indicatorOffset = 0x9;
+            bool found;
 
             Results = new List<ScanStructure>();
             SearchForValuesInMultipleThreads(CaptchaWrite);
-            if (Results.Count() == 1)
+            
+            if (Results.Count() != 0)
             {
-                WriteValuePtr = Results[0].Address + offset;
-            }
-            else if (Results.Count() == 0)
-            {
-                Console.WriteLine("no entries found");
-            }
-            else
-            {
-                Console.WriteLine("too many entries found");
+                foreach (ScanStructure item in Results)
+                {
+                    byte[] buffer = new byte[2];
+                    ReadProcessMemory(TargetHandle, item.Address - indicatorOffset, buffer, (uint)buffer.Length, out _);
+
+                    found = buffer[0] == IndicatorValues[0] && buffer[1] == IndicatorValues[1];
+
+                    if (found)
+                    {
+                        WriteValuePtr = item.Address + offset;
+                        break;
+                    }
+                }
             }
 
             GC.Collect();
@@ -139,87 +169,30 @@ namespace CaptchaV2
 
         private void SetWriteCounterPtr()
         {
-            int offset = -0x07;
-
+            int offset = -0x014;
             if (WriteValuePtr != null && WriteValuePtr != IntPtr.Zero)
             {
-                WriteCounterPtr = WriteValuePtr - offset;
+                WriteCounterPtr = WriteValuePtr + offset;
             }
-
         }
 
         private void SetCaptchaNumber()
         {
             if (ReadValuePtr != null && ReadValuePtr != IntPtr.Zero)
             {
-                ReadProcessMemory(TargetHandle, ReadValuePtr, CaptchaNumbers, (uint)CaptchaNumbers.Length, out IntPtr notNecessary);
-                Console.WriteLine("MemoryScanner Result = " + BitConverter.ToString(CaptchaNumbers, 0));
+                ReadProcessMemory(TargetHandle, ReadValuePtr, CaptchaNumbers, (uint)CaptchaNumbers.Length, out _);
             }
-            else
-            {
-                Console.WriteLine("no value found");
-            }
-        }
-
-        public void Test()
-        {
-            IntPtr arsch = IntPtr.Zero;
-            SearchForValuesInMultipleThreads(CaptchaRead);
-            foreach (ScanStructure item in Results)
-            {
-                Console.WriteLine(item.Address.ToString("X8"));
-                CaptchaNumbers = new byte[4];
-                ReadProcessMemory(TargetHandle, item.Address - 0x04, CaptchaNumbers, 4, out arsch);
-                Console.WriteLine(BitConverter.ToString(CaptchaNumbers, 0));
-            }
-
-            ReadValuePtr = Results[0].Address - 0x04;
-
-            GC.Collect();
-
-
-            Initialize();
-            SearchForValuesInMultipleThreads(CaptchaWrite);
-            if (Results.Count() != 0)
-            {
-                foreach (ScanStructure item in Results)
-                {
-                    Console.WriteLine(Results[0].Address.ToString("X8"));
-                    CaptchaNumbers = new byte[CaptchaWrite.Length];
-                    ReadProcessMemory(TargetHandle, item.Address, CaptchaNumbers, (uint)CaptchaWrite.Length, out arsch);
-                    Console.WriteLine(BitConverter.ToString(CaptchaNumbers, 0));
-                }
-
-                WriteValuePtr = Results[0].Address + 0x0D;
-            }
-
-
-
-            GC.Collect();
-
-            byte[] value = new byte[4];
-            byte[] writeValue = new byte[8];
-            ReadProcessMemory(TargetHandle, ReadValuePtr, value, 4, out arsch);
-            for (int i = 0; i < value.Length; i++)
-            {
-                writeValue[i * 2] = value[i];
-            }
-
-            WriteProcessMemory(TargetHandle, WriteValuePtr, writeValue, 8, out arsch);
-            Thread.Sleep(500);
-            WriteProcessMemory(TargetHandle, WriteValuePtr - 0x07, new byte[] { 4 }, 1, out arsch);
-
         }
 
 
         private void Initialize()
         {
-            int threadCount = Environment.ProcessorCount / 2;
+            //int threadCount = Environment.ProcessorCount / 2;
+            int threadCount = 1;
 
             RegionLists = new List<RegionStructure>[threadCount];
             CurrentSystem = new SystemInfo();
             TargetHandle = OpenProcess(QueryInformation | VirtualMemoryRead | VirtualMemoryWrite | VirtualMemoryOperation, false, CurrentProcess.Id);
-            CreateEntryPoints();
         }
 
         private void CreateEntryPoints()
@@ -247,9 +220,11 @@ namespace CaptchaV2
                 }
 
                 //checks regions for necessary ProtectionStatus to ReadAndWrite and for the needed MemoryType 
-                if (memoryInfo.Protect == AllocationProtectEnum.PAGE_READWRITE
+                if (memoryInfo.RegionSize == 0x2AB0000 // only for 1 region (prolly the correct region)
+                    && (memoryInfo.Protect == AllocationProtectEnum.PAGE_READWRITE
                     || memoryInfo.Protect == AllocationProtectEnum.PAGE_WRITECOMBINEPLUSREADWRITE
-                    && (memoryInfo.Type == TypeEnum.MEM_IMAGE || memoryInfo.Type == TypeEnum.MEM_PRIVATE))
+                    && (memoryInfo.Type == TypeEnum.MEM_IMAGE || memoryInfo.Type == TypeEnum.MEM_PRIVATE)
+                    ))
                 {
                     //adds regions to a List
                     region = new RegionStructure(memoryInfo.BaseAddress, (int)memoryInfo.RegionSize);

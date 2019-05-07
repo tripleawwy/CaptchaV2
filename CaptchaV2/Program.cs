@@ -9,11 +9,15 @@ namespace CaptchaV2
 {
     class Program
     {
+        [STAThreadAttribute]
         static void Main()
         {
             Scanner scanner = new Scanner(Process.GetProcessesByName("CCLauncher_Client")[0]);
-            scanner.Execute();
+            scanner.ExecuteScan();
+            //scanner.ExecuteHack();
             Console.ReadLine();
+
+
 
 
         }
