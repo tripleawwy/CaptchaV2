@@ -1,6 +1,6 @@
 ﻿using System;
+using System.Windows.Media;
 using System.Drawing;
-using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
@@ -47,9 +47,9 @@ namespace CaptchaV2
             CurrentProcess = process;
             CaptchaNumbers = new byte[4];
             IndicatorValues = new byte[] { 0x08, 0x01 };
+            IndicatorValuesEx = new byte[] { 0x09, 0x01 };
             CaptchaRead = new byte[] { 0x73, 0x72, 0x00, 0x30 };
             CaptchaWrite = new byte[] { 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
-            SendPoint = new Point(310, 375);
             Initialize();
         }
 
@@ -60,10 +60,14 @@ namespace CaptchaV2
         private SystemInfo CurrentSystem { get; set; }
         private IntPtr TargetHandle { get; set; }
         private IntPtr CaptchaWindowHandle { get; set; }
+        private double ScalingFactor { get; set; }
         private Point SendPoint { get; set; }
 
 
+
+
         private byte[] IndicatorValues { get; set; }
+        private byte[] IndicatorValuesEx { get; set; }
         private byte[] CaptchaRead { get; set; }
         private byte[] CaptchaWrite { get; set; }
 
@@ -84,8 +88,9 @@ namespace CaptchaV2
             SetWriteValuePtr();
             SetWriteCounterPtr();
             SetCaptchaWindowHandle();
-            Console.WriteLine(WriteCounterPtr.ToString("X8") + " \n" + BitConverter.ToString(CaptchaNumbers,0));
-            Clipboard.SetText(WriteCounterPtr.ToString("X8"));
+            SetScalingFactor();
+            SetSendPoint();
+            Console.WriteLine(WriteCounterPtr.ToString("X8") + " \n" + BitConverter.ToString(CaptchaNumbers, 0));
         }
 
 
@@ -113,6 +118,31 @@ namespace CaptchaV2
         private void SetCaptchaWindowHandle()
         {
             CaptchaWindowHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "Anwesenheitskontrolle");
+            //CaptchaWindowHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "CC Launcher 2.5");
+        }
+
+        private void SetSendPoint()
+        {
+            int xPos = 310;
+            int yPos = 375;
+
+            if (ScalingFactor > 0)
+            {
+                SendPoint = new Point((int)(ScalingFactor * xPos), (int)(ScalingFactor * yPos));
+            }
+        }
+
+
+        private void SetScalingFactor()
+        {
+            if (CaptchaWindowHandle != IntPtr.Zero)
+            {
+                ScalingFactor = Utilities.GetDisplayScaleFactor(CaptchaWindowHandle);
+            }
+            else
+            {
+                ScalingFactor = 1;
+            }
         }
 
         private void SetReadValuePtr()
@@ -121,7 +151,6 @@ namespace CaptchaV2
             bool found = false;
             byte[] buffer = new byte[CaptchaNumbers.Length];
             Results = new List<ScanStructure>();
-
 
             SearchForValuesInMultipleThreads(CaptchaRead);
 
@@ -137,15 +166,11 @@ namespace CaptchaV2
                         break;
                     }
                 }
-
                 if (found)
                 {
                     ReadValuePtr = item.Address + offset;
                 }
-
             }
-
-
             GC.Collect();
         }
 
@@ -157,7 +182,7 @@ namespace CaptchaV2
 
             Results = new List<ScanStructure>();
             SearchForValuesInMultipleThreads(CaptchaWrite);
-            
+
             if (Results.Count() != 0)
             {
                 foreach (ScanStructure item in Results)
@@ -165,8 +190,7 @@ namespace CaptchaV2
                     byte[] buffer = new byte[2];
                     ReadProcessMemory(TargetHandle, item.Address - indicatorOffset, buffer, (uint)buffer.Length, out _);
 
-                    found = buffer[0] == IndicatorValues[0] && buffer[1] == IndicatorValues[1];
-
+                    found = (buffer[0] == IndicatorValues[0] && buffer[1] == IndicatorValues[1]) || (buffer[0] == IndicatorValuesEx[0] && buffer[1] == IndicatorValuesEx[1]);
                     if (found)
                     {
                         WriteValuePtr = item.Address + offset;
@@ -174,7 +198,6 @@ namespace CaptchaV2
                     }
                 }
             }
-
             GC.Collect();
         }
 
@@ -223,7 +246,7 @@ namespace CaptchaV2
                 }
 
                 //checks regions for necessary ProtectionStatus to ReadAndWrite and for the needed MemoryType 
-                if (memoryInfo.RegionSize == 0x2AB0000 || ((int)memoryInfo.BaseAddress >= 0x06000000 && (int)memoryInfo.BaseAddress <= 0x0A000000) // only for 1 region (prolly the correct region)
+                if (memoryInfo.RegionSize == 0x2AB0000 || ((int)memoryInfo.BaseAddress >= 0x05000000 && (int)memoryInfo.BaseAddress <= 0x0A000000) // only for 1 region (prolly the correct region)
                     && (memoryInfo.Protect == AllocationProtectEnum.PAGE_READWRITE
                     || memoryInfo.Protect == AllocationProtectEnum.PAGE_WRITECOMBINEPLUSREADWRITE
                     && (memoryInfo.Type == TypeEnum.MEM_IMAGE || memoryInfo.Type == TypeEnum.MEM_PRIVATE)
@@ -248,7 +271,7 @@ namespace CaptchaV2
             {
                 threadCount = Environment.ProcessorCount / 2;
             }
-            else if (sourceList.Count() >= Environment.ProcessorCount/2)
+            else if (sourceList.Count() >= Environment.ProcessorCount / 2)
             {
                 threadCount = Environment.ProcessorCount / 2;
             }

@@ -12,6 +12,13 @@ namespace DLLImports
     {
         #region DLL_Imports
 
+        #region GetDpiForWindow_done
+
+        [DllImport("user32.dll")]
+        public static extern int GetDpiForWindow(IntPtr hWnd);
+
+        #endregion
+
         #region GetActiveWindow_done
         /*      
          *      Syntax
@@ -339,9 +346,7 @@ namespace DLLImports
         public struct WINDOWINFO
         {
             public uint cbSize;
-            [MarshalAs(UnmanagedType.LPStruct)]
             public RECT rcWindow;
-            [MarshalAs(UnmanagedType.LPStruct)]
             public RECT rcClient;
             public uint dwStyle;
             public uint dwExStyle;

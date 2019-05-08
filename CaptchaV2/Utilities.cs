@@ -49,5 +49,20 @@ namespace CaptchaV2
             return spot;
         }
 
+
+
+        // calculates scaling factor by retrieving DPI
+        public static double GetDisplayScaleFactor(IntPtr windowHandle)
+        {
+            try
+            {
+                return GetDpiForWindow(windowHandle) / 96;
+            }
+            catch
+            {
+                // Or fallback to GDI solutions above
+                return 1;
+            }
+        }
     }
 }
