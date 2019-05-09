@@ -13,8 +13,8 @@ namespace CaptchaV2
         static void Main()
         {
             Scanner scanner = new Scanner(Process.GetProcessesByName("CCLauncher_Client")[0]);
-            scanner.ExecuteScan();
-            scanner.ExecuteHack();
+            scanner.Run();
+
             Console.ReadLine();
 
 

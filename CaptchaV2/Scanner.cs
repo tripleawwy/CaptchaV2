@@ -46,10 +46,6 @@ namespace CaptchaV2
         {
             CurrentProcess = process;
             CaptchaNumbers = new byte[4];
-            IndicatorValues = new byte[] { 0x08, 0x01 };
-            IndicatorValuesEx = new byte[] { 0x09, 0x01 };
-            CaptchaRead = new byte[] { 0x73, 0x72, 0x00, 0x30 };
-            CaptchaWrite = new byte[] { 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
             Initialize();
         }
 
@@ -66,10 +62,11 @@ namespace CaptchaV2
 
 
 
-        private byte[] IndicatorValues { get; set; }
-        private byte[] IndicatorValuesEx { get; set; }
-        private byte[] CaptchaRead { get; set; }
-        private byte[] CaptchaWrite { get; set; }
+        private byte[] CounterValue => new byte[] { 0x04 };
+        private byte[] IndicatorValues => new byte[] { 0x08, 0x01 };
+        private byte[] IndicatorValuesEx => new byte[] { 0x09, 0x01 };
+        private byte[] CaptchaRead => new byte[] { 0x73, 0x72, 0x00, 0x30 };
+        private byte[] CaptchaWrite => new byte[] { 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
 
         public byte[] CaptchaNumbers { get; private set; }
         public IntPtr ReadValuePtr { get; private set; }
@@ -77,24 +74,39 @@ namespace CaptchaV2
         public IntPtr WriteCounterPtr { get; private set; }
 
 
+        public void Run()
+        {
+            while (true)
+            {
+                FindCaptchaWindow();
+                ExecuteScan();
+                ProvideInformation();
+                ExecuteHack();
+                Reset();
+            }
+        }
+        private void FindCaptchaWindow()
+        {
+            while (CaptchaWindowHandle == IntPtr.Zero)
+            {
+                SetCaptchaWindowHandle();
+                Thread.Sleep(500);
+            }
+        }
 
-
-
-        public void ExecuteScan()
+        private void ExecuteScan()
         {
             CreateEntryPoints();
             SetReadValuePtr();
             SetCaptchaNumber();
             SetWriteValuePtr();
             SetWriteCounterPtr();
-            SetCaptchaWindowHandle();
             SetScalingFactor();
             SetSendPoint();
-            Console.WriteLine(WriteCounterPtr.ToString("X8") + " \n" + BitConverter.ToString(CaptchaNumbers, 0));
         }
 
 
-        public void ExecuteHack()
+        private void ExecuteHack()
         {
             if (WriteValuePtr != IntPtr.Zero)
             {
@@ -102,7 +114,7 @@ namespace CaptchaV2
             }
             if (WriteCounterPtr != IntPtr.Zero)
             {
-                Utilities.WriteCaptchaNumbers(TargetHandle, WriteCounterPtr, new byte[] { 0x04 });
+                Utilities.WriteCaptchaNumbers(TargetHandle, WriteCounterPtr, CounterValue);
             }
             Utilities.LeftClick(CaptchaWindowHandle, SendPoint);
 
@@ -110,16 +122,30 @@ namespace CaptchaV2
 
         private void Initialize()
         {
-
             CurrentSystem = new SystemInfo();
             TargetHandle = OpenProcess(QueryInformation | VirtualMemoryRead | VirtualMemoryWrite | VirtualMemoryOperation, false, CurrentProcess.Id);
         }
+
+        private void Reset()
+        {
+            CaptchaWindowHandle = IntPtr.Zero;
+        }
+
+        private void ProvideInformation()
+        {
+            string processName = CurrentProcess.ProcessName;
+            string captchaNumbers = System.Text.Encoding.UTF8.GetString(CaptchaNumbers);
+            string writeAddress = WriteCounterPtr.ToString("X8");
+            Console.WriteLine("Program : {0} \nCaptcha Numbers : {1} \nAddress To Write at : {2}", processName, captchaNumbers, writeAddress);
+        }
+
 
         private void SetCaptchaWindowHandle()
         {
             CaptchaWindowHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "Anwesenheitskontrolle");
             //CaptchaWindowHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, "CC Launcher 2.5");
         }
+
 
         private void SetSendPoint()
         {
